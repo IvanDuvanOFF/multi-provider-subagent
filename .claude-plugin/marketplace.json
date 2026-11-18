@@ -1,0 +1,11 @@
+{
+  "name": "multi-provider-subagent",
+  "owner": { "name": "IvanDuvanOFF" },
+  "plugins": [
+    {
+      "name": "multi-provider-subagent",
+      "source": "./",
+      "description": "Run SDD assignments on external CLI agents (OpenAI Codex, xAI Grok) and receive Markdown reports."
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "multi-provider-subagent",
+  "version": "0.1.0",
+  "description": "Run SDD assignments on external CLI agents (OpenAI Codex, xAI Grok) and receive Markdown reports. Companion to sdd-scaffold.",
+  "author": { "name": "IvanDuvanOFF" },
+  "keywords": ["sdd", "subagents", "codex", "grok", "multi-provider"]
+}

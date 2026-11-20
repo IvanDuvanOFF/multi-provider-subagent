@@ -1,9 +1,9 @@
 ---
 name: multi-provider-subagent
-description: "Delegate an SDD assignment (a Markdown file in docs/tasks/) to an external CLI agent — OpenAI Codex or xAI Grok — and get its report back as a Markdown file in docs/changelog/. Use when the user asks to run a task, review, test writing or second opinion on Codex or Grok, to use another vendor's model as a subagent, or to compare providers. Works with the sdd-scaffold structure; not for ordinary Claude subagents."
+description: "Delegate an SDD assignment (a Markdown file in docs/tasks/) to an external CLI agent — OpenAI Codex, xAI Grok or DeepSeek (dsh) — and get its report back as a Markdown file in docs/changelog/. Use when the user asks to run a task, review, test writing or second opinion on Codex, Grok or DeepSeek, to use another vendor's model as a subagent, or to compare providers. Works with the sdd-scaffold structure; not for ordinary Claude subagents."
 ---
 
-# Multi-provider subagents (Codex, Grok)
+# Multi-provider subagents (Codex, Grok, DeepSeek dsh)
 
 Claude Code is the coordinator. External agents are headless CLI processes
 launched by `scripts/run_task.py`. The contract is the same as for native SDD
@@ -16,7 +16,7 @@ back to the session; the substance is in the report file.
   `docs/sdd/`). If not, offer the `sdd-scaffold` skill first. Do not create
   structure here.
 - `python <skill-dir>/scripts/run_task.py --check` shows both CLIs. Both must be
-  logged in already (`codex login`, `grok login`); never handle credentials.
+  logged in already (`codex login`, `grok login`, and a DeepSeek API key configured for `dsh`); never handle credentials.
 - The project is a git repository (the script reports changed files via git).
 
 ## Workflow
@@ -41,6 +41,7 @@ back to the session; the substance is in the report file.
    ```text
    python <skill-dir>/scripts/run_task.py codex docs/tasks/reviewer/R-01.md
    python <skill-dir>/scripts/run_task.py grok  docs/tasks/test-writer/T-02.md --effort high
+   python <skill-dir>/scripts/run_task.py dsh   docs/tasks/test-writer/T-03.md --model deepseek-v4-pro
    ```
 
    Run from the project root (or pass `--root`). Runs take minutes: launch with
@@ -67,19 +68,22 @@ No fixed ranking; ask the user when it matters. Useful defaults:
   that wrote the code.
 - **Implementation and test writing** → Codex (`workspace-write` sandbox enforces
   the project root).
-- **Quick, cheap analysis or large parallel fan-out** → Grok.
+- **Quick, cheap analysis or large parallel fan-out** → Grok or DeepSeek
+  (`deepseek-flash` is the default; `deepseek-v4-pro` for harder tasks).
 - Use `--model` / `--effort` only when the user asked; otherwise CLI defaults
   from the user's own config apply (do not edit their configs).
 
 ## Provider specifics
 
-| | Codex | Grok |
-| --- | --- | --- |
-| Command | `codex exec -s workspace-write -C <root> -` (prompt on stdin) | `grok --permission-mode auto --prompt-file …` |
-| Write limit | Sandbox: project root only | Not path-restricted: verify `changed_files` |
-| Project rules | Reads `AGENTS.md`; the prompt makes it read `CLAUDE.md` | Reads `CLAUDE.md` natively |
-| Effort | `-c model_reasoning_effort=…` via `--effort` | `--effort` |
-| Network | Off in sandbox | On |
+| | Codex | Grok | DeepSeek (`dsh`) |
+| --- | --- | --- | --- |
+| Command | `codex exec -s workspace-write -C <root> -` (prompt on stdin) | `grok --permission-mode auto --prompt-file …` | `dsh headless --permission-mode workspace-write --approval-policy never -` (task on stdin) |
+| Write limit | Sandbox: project root only | Not path-restricted: verify `changed_files` | `workspace-write` sandbox rooted at the cwd (per its config; enforcement not tested here), still verify `changed_files` |
+| Project rules | Reads `AGENTS.md`; the prompt makes it read `CLAUDE.md` | Reads `CLAUDE.md` natively | The prompt makes it read `CLAUDE.md` |
+| Model | `--model` | `--model` | `--model` (via a generated `--patch` overlay); valid: `deepseek-flash` (default), `deepseek-v4-pro` |
+| Effort | `-c model_reasoning_effort=…` via `--effort` | `--effort` | Not supported: `--effort` is rejected |
+| Network | Off in sandbox | On | Not tested |
+| Final message | `-o` file | In the log | Stdout → `.mps-runs/*.last.txt`, diagnostics → log |
 
 ## Rules
 

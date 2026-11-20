@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run an SDD assignment (Markdown file) on an external CLI agent (Codex or Grok).
+"""Run an SDD assignment (Markdown file) on an external CLI agent (Codex, Grok or DeepSeek dsh).
 
 The external agent reads the assignment, does the work in the project, and writes a
 Markdown report. This wrapper builds the launch prompt, runs the CLI headlessly,
@@ -7,12 +7,13 @@ and prints one JSON object describing the outcome. It never commits or pushes.
 
 Usage:
   run_task.py --check
-  run_task.py <codex|grok> <task.md> [--root DIR] [--report PATH] [--role NAME]
+  run_task.py <codex|grok|dsh> <task.md> [--root DIR] [--report PATH] [--role NAME]
               [--model M] [--effort E] [--timeout SEC] [--dry-run]
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import re
@@ -21,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROVIDERS = ("codex", "grok")
+PROVIDERS = ("codex", "grok", "dsh")
 PLACEHOLDER = re.compile(r"[<>]")
 
 
@@ -130,6 +131,20 @@ def command(provider: str, root: Path, prompt_file: Path, last_file: Path,
             argv += ["-c", f'model_reasoning_effort="{effort}"']
         argv.append("-")  # prompt from stdin
         return argv, prompt_file.read_text(encoding="utf-8")
+    if provider == "dsh":
+        # Headless profile: workspace root is the process cwd (main() sets cwd=root).
+        # Effort has no CLI flag; the model is switched through a --patch overlay.
+        if effort:
+            sys.exit("dsh has no --effort option; omit it")
+        argv = [exe, "headless"]
+        if model:  # launcher flag: must precede the app's own flags
+            patch = prompt_file.with_name(prompt_file.name.replace(".prompt.md", ".model.yml"))
+            patch.write_text(
+                "- id: agent-default-model\n  config:\n    provider: deepseek-official\n"
+                f"    model: {json.dumps(model)}\n", encoding="utf-8")
+            argv += ["--patch", str(patch)]
+        argv += ["--permission-mode", "workspace-write", "--approval-policy", "never", "-"]  # task on stdin
+        return argv, prompt_file.read_text(encoding="utf-8")
     argv = [exe, "--cwd", str(root), "--permission-mode", "auto",
             "--output-format", "plain", "--prompt-file", str(prompt_file)]
     if model:
@@ -221,10 +236,16 @@ def main() -> int:
     fp_before = file_hashes(root, before) if before is not None else {}
     status, code = "ok", None
     try:
-        with open(log_file, "w", encoding="utf-8", errors="replace") as log:
+        # dsh prints the final message on stdout and diagnostics on stderr: split them.
+        split = a.provider == "dsh"
+        with contextlib.ExitStack() as stack:
+            log = stack.enter_context(open(log_file, "w", encoding="utf-8", errors="replace"))
+            out = (stack.enter_context(open(last_file, "w", encoding="utf-8", errors="replace"))
+                   if split else log)
             proc = subprocess.run(
                 argv, input=stdin_text, text=True, encoding="utf-8", errors="replace",
-                stdout=log, stderr=subprocess.STDOUT, timeout=a.timeout, cwd=root,
+                stdout=out if split else log, stderr=log if split else subprocess.STDOUT,
+                timeout=a.timeout, cwd=root,
                 stdin=None if stdin_text is not None else subprocess.DEVNULL,
             )
         code = proc.returncode
